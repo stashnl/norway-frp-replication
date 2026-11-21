@@ -6,7 +6,7 @@ It replicates Haugsgjerd and Bergh, "Explaining the surge of the populist radica
 
 > How did economic performance and immigration influence support for the Norwegian Progress Party (FrP) between 1991 and 2019?
 
-- **Report:** [report/Saldan_2025_FRP_replication.docx](report/Saldan_2025_FRP_replication.docx)
+- **Report (PDF):** [report/Saldan_2025_FRP_replication.pdf](report/Saldan_2025_FRP_replication.pdf)
 - **Analysis code (R Markdown):** [analysis/analysis.Rmd](analysis/analysis.Rmd)
 
 ![FrP support 1991–2019, with parliamentary elections marked](figures/frp_support_1991_2019.png)
