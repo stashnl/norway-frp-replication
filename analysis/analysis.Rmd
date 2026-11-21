@@ -1,0 +1,2032 @@
+---
+title: "Replication and extension of Haugsgjerd and Bergh: analysis"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-03-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data & Package Loading
+
+```{r}
+
+library(haven)    
+library(ggplot2)  
+library(dplyr)
+library(lubridate)
+library(kableExtra)
+library(tidyr)
+library(knitr)
+library(AER)
+library(dynlm)
+library(forecast)
+library(readxl)
+library(stargazer)
+library(scales)
+library(quantmod)
+library(urca)
+library(sandwich)
+library(skedastic)
+library(tseries)
+library(expss)
+library(broom)
+library(ggplot2)
+library(ggfortify)
+library(lmtest)
+library(strucchange)
+library(modelsummary)
+library(marginaleffects)
+
+dta <- read_dta("../data/POBE_Haugsgjerd_Berg_2023.dta")
+```
+
+## Descriptive Stats and Visualisation
+
+DV: FRP Average Support
+
+IVs (Standardised):
+
+-   Absolute Number Asylum Seekers
+
+-   \% Workforce Unemployed
+
+-   Monthly Avg. Stock Rate Index
+
+-   4th Root of Months since FRP in government
+
+-   Dummy var for Election Month
+
+-   Utoya Attack Var
+
+-   93 Immigration crisis Var
+
+-   15 Immigration crisis Var
+
+-   EU referendum var
+
+**Main Vars Graphs**
+
+```{r}
+
+# Convert Month to a proper date format (assuming Month is months since Jan 1960)
+dta <- dta |>
+  mutate(Date = as.Date("1960-01-01") + months(Month),
+         Date_formatted = format(Date, "%d/%m/%Y"))  # Format as "DD/MM/YYYY"
+
+head(dta[, c("Month", "Date", "Date_formatted")])
+
+#FRP Support
+ggplot(dta, aes(x = Date, y = frp_avg_support)) +
+  geom_line(color = "blue") +                      # Line for time series
+  geom_smooth(method = "loess", se = FALSE, color = "red") +  # Trend line
+  labs(title = "FRP Support by Month",
+       x = "Time", y = "Average FRP Support") +
+  theme_minimal()
+
+#Unemployment
+
+ggplot(dta, aes(x = Date, y = unemp)) +
+  geom_line(color = "blue") +                      # Line for time series
+  geom_smooth(method = "loess", se = FALSE, color = "red") +  # Trend line
+  labs(title = "% Workforce Unemployment by Month",
+       x = "Time", y = "Unemployment Rate (%)") +
+  theme_minimal()
+
+#No. Asylum Seekers
+
+ggplot(dta, aes(x = Date, y = asl)) +
+  geom_line(color = "blue") +                      # Line for time series
+  geom_smooth(method = "loess", se = FALSE, color = "red") +  # Trend line
+  labs(title = "Absolute Number of Asylum Seekers by Month",
+       x = "Time", y = "Number of Asylum Seekers") +
+  theme_minimal()
+
+#Stock Rate Index
+
+ggplot(dta, aes(x = Date, y = stock_rate)) +
+  geom_line(color = "blue") +                      # Line for time series
+  geom_smooth(method = "loess", se = FALSE, color = "red") +  # Trend line
+  labs(title = "Monthly Average Stock Rate Index",
+       x = "Time", y = "Stock Rate Index") +
+  theme_minimal()
+
+
+```
+
+**Additional Controls Graphs**
+
+```{r}
+
+#FRP Accountability While in Government
+
+ggplot(dta, aes(x = Date, y = frp_gov_growing_acc)) +
+  geom_line(color = "blue") +                      # Line for time series
+  labs(title = "FRP Accountability While in Government (4th Root of Months since taking Office)",
+       x = "Time", y = "Accountability Score") +
+  theme_minimal()
+
+#Parliaentary Election Months (Not Strictly necessary??)
+
+ggplot(dta, aes(x = Date)) +
+  geom_line(aes(y = frp_avg_support), color = "blue") +  # Line for FRP support
+  geom_vline(data = dta[dta$parliamentary_elec == 1, ], aes(xintercept = as.numeric(Date)), 
+             color = "red", linetype = "dashed", linewidth = 1) +  # Vertical lines for election months
+  labs(title = "FRP Support with Parliamentary Elections Highlighted",
+       x = "Time", y = "FRP Support (%)") +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +  # Adjust for FRP Support scale
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+#Utoya Event Var
+
+ggplot(dta, aes(x = Date, y = utoya)) +
+  geom_line(color = "blue") +  # Line for Utoya impact
+  labs(title = "Utoya Impact Over Time",
+       x = "Time", y = "Impact Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+
+#93 Immigration Crisis Var
+
+ggplot(dta, aes(x = Date, y = asylum_crisis_93)) +
+  geom_line(color = "blue") +  # Line for Immigration Crisis impact
+  labs(title = "1993 Immigration Crisis Impact Score Over Time",
+       x = "Time", y = "Impact Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+#15 Immigration Crisis Var
+
+ggplot(dta, aes(x = Date, y = asylum_crisis_15)) +
+  geom_line(color = "blue") +  # Line for Immigration Crisis impact
+  labs(title = "2015 Immigration Crisis Impact Score Over Time",
+       x = "Time", y = "Impact Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+#EU Referendum Var
+
+ggplot(dta, aes(x = Date, y = EU_referendum)) +
+  geom_line(color = "blue") +  # Line for EU referendum impact
+  labs(title = "EU Referendum Impact Over Time",
+       x = "Time", y = "Impact Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+```
+
+**Main Var Descriptive Statistics**
+
+```{r}
+
+# Calculate summary statistics for each variable using reframe
+summary_stats <- dta|>
+  reframe(
+    `FRP Support (%)` = c(mean(frp_avg_support, na.rm = TRUE), sd(frp_avg_support, na.rm = TRUE), 
+                      min(frp_avg_support, na.rm = TRUE), max(frp_avg_support, na.rm = TRUE), 
+                      sum(!is.na(frp_avg_support))),
+    `Unemployment Rate (%)` = c(mean(unemp, na.rm = TRUE), sd(unemp, na.rm = TRUE), 
+                                min(unemp, na.rm = TRUE), max(unemp, na.rm = TRUE), 
+                                sum(!is.na(unemp))),
+    `Asylum Seekers` = c(mean(asl, na.rm = TRUE), sd(asl, na.rm = TRUE), 
+                         min(asl, na.rm = TRUE), max(asl, na.rm = TRUE), 
+                         sum(!is.na(asl))),
+    `Stock Rate Index` = c(mean(stock_rate, na.rm = TRUE), sd(stock_rate, na.rm = TRUE), 
+                           min(stock_rate, na.rm = TRUE), max(stock_rate, na.rm = TRUE), 
+                           sum(!is.na(stock_rate)))
+  )
+
+# Round all values to 3 significant figures, except for "Asylum Seekers"
+summary_stats <- summary_stats|>
+  mutate(across(everything(), ~signif(. , 3)))
+
+# Round the "Asylum Seekers" column to the nearest unit
+summary_stats$`Asylum Seekers` <- round(summary_stats$`Asylum Seekers`)
+
+# Convert the result to a data frame and set row names
+summary_stats <- as.data.frame(summary_stats)
+
+# Create a vector for row names (the descriptive statistics)
+row_names <- c("Mean", "Standard Deviation", "Min", "Max", "N")
+
+# Assign row names correctly
+rownames(summary_stats) <- row_names
+
+# Print the table with kableExtra for improved formatting
+summary_stats %>%
+  kable(caption = "Descriptive Statistics for Key Variables", format = "markdown") |>
+  kable_styling(latex_options = c("striped", "hold_position", "responsive")) |>
+  # Bold and centered title
+  row_spec(0, bold = TRUE, align = "c", font_size = 14) # Adjust title font size
+
+#Saving table
+
+summary_stats |>
+  kable(caption = "Descriptive Statistics for Key Variables", format = "html") |>
+  kable_styling(latex_options = c("striped", "hold_position", "responsive")) |>
+  row_spec(0, bold = TRUE, align = "c", font_size = 14) %>%
+  save_kable("summary_stats_table.html")
+
+```
+
+#### **TS Analysis Data Prep**
+
+```{r}
+
+# 1. Sort by date
+dta <- dta[order(dta$Date), ]
+
+# 2. Extract numeric data as a matrix
+data_matrix <- as.matrix(dta[, c("frp_avg_support", "asl_stand", "stock_rate_stand", "unemp_stand", "frp_gov_growing_acc", "parliamentary_elec", "utoya", "EU_referendum", "asylum_crisis_15", "asylum_crisis_93")])
+
+# 3. Get start year and start month from first date
+start_year <- as.numeric(format(min(dta$Date), "%Y"))
+start_month <- as.numeric(format(min(dta$Date), "%m"))
+
+# 4. Convert to ts object
+ts_data <- ts(data_matrix, start = c(start_year, start_month), frequency = 12)
+```
+
+~~**Fractional/Co-Integration Tests**~~
+
+```{r}
+
+
+# Select variables for cointegration test
+jodata <- ts_data[, c("frp_avg_support", "asl_stand", "stock_rate_stand", "unemp_stand")]
+
+# Run the Johansen test with the chosen lag length (K)
+jotest <- ca.jo(jodata, type = "trace", ecdet = "const", K = 2)  # adjust K based on lag selection
+
+summary(jotest)
+
+#HOW TF DO I INTERPRET? HOW TF DO I CHOSE LAG LENGTH? HOW TF DO I PERFROM TEST FOR FRACTIONAL INTEGRATION (ROBINSONS SEMI PARAMTERIC ESTIMATOR)
+
+
+
+```
+
+#### **Initial Regression Models**
+
+```{r}
+
+#M1 No Interactions nor Accountability
+
+M1 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+               L(asl_stand, 1) + L(asl_stand, 2) +
+              stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+              unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+              EU_referendum + utoya + asylum_crisis_15 + asylum_crisis_93, data = ts_data)
+
+summary(M1)
+
+#M2 Asylum Interaction and Accountability
+
+M2 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+               L(asl_stand, 1) + L(asl_stand, 2) +
+               stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+               unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+               EU_referendum + utoya + asylum_crisis_15 + asylum_crisis_93 +
+               frp_gov_growing_acc + 
+               frp_gov_growing_acc:asl_stand + 
+               frp_gov_growing_acc:L(asl_stand, 1) + 
+               frp_gov_growing_acc:L(asl_stand, 2),
+             data = ts_data)
+
+summary(M2)
+
+#M3 Stock Rate Interaction and Accountability
+
+M3 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + 
+               asl_stand + L(asl_stand, 1) + L(asl_stand, 2) + 
+               stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) + 
+               unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + 
+               parliamentary_elec + EU_referendum + utoya + asylum_crisis_15 + asylum_crisis_93 + 
+               frp_gov_growing_acc + 
+               frp_gov_growing_acc:stock_rate_stand + 
+               frp_gov_growing_acc:L(stock_rate_stand, 1) + 
+               frp_gov_growing_acc:L(stock_rate_stand, 2),
+             data = ts_data)
+
+summary(M3)
+
+#M4 Unemployment Interaction and Accountability
+
+M4 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + 
+               asl_stand + L(asl_stand, 1) + L(asl_stand, 2) + 
+               stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) + 
+               unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + 
+               parliamentary_elec + EU_referendum + utoya + asylum_crisis_15 + asylum_crisis_93 + 
+               frp_gov_growing_acc + 
+               frp_gov_growing_acc:unemp_stand + 
+               frp_gov_growing_acc:L(unemp_stand, 1) + 
+               frp_gov_growing_acc:L(unemp_stand, 2),
+             data = ts_data)
+
+summary(M4)
+```
+
+```{r}
+stargazer(M1, M2, M3, M4,
+          type = "html",
+          title = "Comparison of Replicated Regression Models",
+          column.labels =  c("Model 1", "Model 2", "Model 3", "Model 4"),
+          covariate.labels = c(covarlabelsfull),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          no.space = TRUE,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digits = 3,
+          notes = "*** = p<0.001, ** = p<0.01, * = p<0.05",
+          dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje")
+
+
+slopes(M2, 
+       variables = "asl_stand", 
+       newdata = datagrid(frp_gov_growing_acc = seq(from=0, to=3, by=0.2))) |> 
+  ggplot(aes(x=frp_gov_growing_acc, y=estimate)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin=conf.low, ymax=conf.high), alpha = 0.2) + 
+  labs(title = "Marginal effects of monthly asylum seekers (differenced)" ,
+       y = "Marginal Effect of Monthly Asylum Seekers", 
+       x = "FRP Accountability") + 
+  scale_x_continuous(breaks=c(1,2,3))
+```
+
+#### **Assumptions Testing**
+
+##### Lag Length
+
+```{r}
+#Lag Length Selection
+
+
+
+# Define the range of lags you want to test
+lag_range <- 1:12  # for example, lag from 1 to 10
+
+# Create an empty data frame to store results
+lag_results <- data.frame(Lag = integer(), AIC = numeric(), BIC = numeric())
+
+# Loop through different lag lengths and fit models
+for (lag in lag_range) {
+  # Dynamically create the formula for each lag length
+  model_formula <- as.formula(paste("frp_avg_support ~", 
+                                    paste(paste("L(frp_avg_support,", 1:lag, ")", collapse = " + "), "+", 
+                                          "asl_stand +", paste(paste("L(asl_stand,", 1:lag, ")", collapse = " + "), collapse = " + "), "+", 
+                                          "stock_rate_stand +", paste(paste("L(stock_rate_stand,", 1:lag, ")", collapse = " + "), collapse = " + "), "+",
+                                          "unemp_stand +", paste(paste("L(unemp_stand,", 1:lag, ")", collapse = " + "), collapse = " + "), "+",
+                                          "parliamentary_elec + EU_referendum + utoya + asylum_crisis_15 + asylum_crisis_93")))
+  
+  # Fit the model using dynlm
+  model <- dynlm(model_formula, data = ts_data)
+  
+  # Store the AIC and BIC for the model without creating additional objects
+  lag_results <- rbind(lag_results, data.frame(Lag = lag, AIC = AIC(model), BIC = BIC(model)))
+}
+
+lag_results$AIC_BIC <- lag_results$AIC + lag_results$BIC
+
+min(lag_results$AIC_BIC)
+
+#Best lag length is 2
+
+
+```
+
+##### Autocorrelation
+
+```{r}
+#Testing for Autocorrleation 
+
+# Perform Ljung-Box and Breusch-Godfrey tests for all models
+
+# Create a function to perform both tests and return results in a structured format
+test_models_to_table <- function(model) {
+  # Extract residuals
+  residuals_model <- residuals(model)
+  
+  # Ljung-Box test
+  ljung_box_result <- Box.test(residuals_model, lag = 12, type = "Ljung-Box")
+  
+  # Breusch-Godfrey test
+  bg_test_result <- bgtest(model, order = 12)
+  
+  # Return results in a list
+  c(Ljung_Box_p_value = ljung_box_result$p.value, 
+    BG_p_value = bg_test_result$p.value)
+}
+
+# Apply the function to all four models
+results_M1 <- test_models_to_table(M1)
+results_M2 <- test_models_to_table(M2)
+results_M3 <- test_models_to_table(M3)
+results_M4 <- test_models_to_table(M4)
+
+# Combine results into a single data frame for easy comparison
+test_results_df <- data.frame(
+  Model = c("M1", "M2", "M3", "M4"),
+  Ljung_Box_p_value = c(results_M1["Ljung_Box_p_value"], 
+                        results_M2["Ljung_Box_p_value"], 
+                        results_M3["Ljung_Box_p_value"], 
+                        results_M4["Ljung_Box_p_value"]),
+  BG_p_value = c(results_M1["BG_p_value"], 
+                 results_M2["BG_p_value"], 
+                 results_M3["BG_p_value"], 
+                 results_M4["BG_p_value"])
+)
+
+# Print the results table
+print(test_results_df)
+
+#Conclusion: all p-values >0.05, no significant autocorrelation
+
+```
+
+##### Heteroskedasticity
+
+```{r}
+#Testing for Heteroskedasticity
+
+# Applying White's test for heteroscedasticity
+white_M1 <- white(M1)
+white_M2 <- white(M2)
+white_M3 <- white(M3)
+white_M4 <- white(M4)
+
+# Extracting the test statistics and p-values from the results
+white_results <- data.frame(
+  Model = c("M1", "M2", "M3", "M4"),
+  White_Statistic = c(white_M1$statistic, white_M2$statistic, white_M3$statistic, white_M4$statistic),
+  White_p_value = c(white_M1$p.value, white_M2$p.value, white_M3$p.value, white_M4$p.value)
+)
+
+# Display results
+print(white_results)
+
+```
+
+##### (Weak) Exogeneity
+
+```{r}
+
+#Weak Exogeneity WRONG DIRECTION!!!!!!!
+
+# Perform Granger causality tests for variables:
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data)  # Test if asl_stand Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data)  # Test if stock_rate_stand Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data)  # Test if unemp_stand Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ frp_gov_growing_acc, order = 2, data = ts_data)  # Test if frp_gov_growing_acc Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data)  # Test if parliamentary_elec Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data)  # Test if EU_referendum Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ utoya, order = 2, data = ts_data)  # Test if utoya Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ asylum_crisis_15, order = 2, data = ts_data)  # Test if asylum_crisis_15 Granger-causes frp_avg_support
+grangertest(frp_avg_support ~ asylum_crisis_93, order = 2, data = ts_data)  # Test if asylum_crisis_93 Granger-causes frp_avg_support
+
+#all p>0.05, weak exogeneity satisfied??
+
+```
+
+```{r}
+#correct direction
+
+# Perform Granger causality tests for  variables:
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes asl_stand
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes stock_rate_stand
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes unemp_stand
+grangertest(frp_gov_growing_acc ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes frp_gov_growing_acc
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes parliamentary_elec
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes EU_referendum
+grangertest(utoya ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes utoya
+grangertest(asylum_crisis_15 ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes asylum_crisis_15
+grangertest(asylum_crisis_93 ~ frp_avg_support, order = 2, data = ts_data)  # Test if frp_avg_support Granger-causes asylum_crisis_93
+
+```
+
+##### Normality
+
+```{r}
+#Testing for Normality
+
+# Perform the Jarque-Bera test for normality on the residuals of each model
+jb_M1 <- jarque.bera.test(residuals(M1))
+jb_M2 <- jarque.bera.test(residuals(M2))
+jb_M3 <- jarque.bera.test(residuals(M3))
+jb_M4 <- jarque.bera.test(residuals(M4))
+
+# Display results
+jb_results <- data.frame(
+  Model = c("M1", "M2", "M3", "M4"),
+  JB_Statistic = c(jb_M1$statistic, jb_M2$statistic, jb_M3$statistic, jb_M4$statistic),
+  p_value = c(jb_M1$p.value, jb_M2$p.value, jb_M3$p.value, jb_M4$p.value)
+)
+
+# View the results
+print(jb_results)
+
+
+
+# Plot histograms and Q-Q plots for the residuals of M1 to M4
+
+# Define a plotting function for residuals
+plot_residuals <- function(model, model_name) {
+  residuals_data <- residuals(model)
+  
+  # Set up a 1x2 grid of plots (Histogram and Q-Q Plot)
+  par(mfrow = c(1, 2))
+  
+  # Histogram of residuals
+  hist(residuals_data, main = paste("Histogram of Residuals -", model_name),
+       xlab = "Residuals", col = "lightblue", border = "black", breaks = 20)
+  
+  # Q-Q plot of residuals
+  qqnorm(residuals_data, main = paste("Q-Q Plot -", model_name))
+  qqline(residuals_data, col = "red")
+}
+
+# Apply the function to each model (M1 to M4)
+plot_residuals(M1, "M1")
+plot_residuals(M2, "M2")
+plot_residuals(M3, "M3")
+plot_residuals(M4, "M4")
+
+# Reset the plotting layout to a single panel for other plots
+par(mfrow = c(1, 1))
+
+#FAILURE
+
+
+```
+
+Residuals and Influential Outliers
+
+```{r}
+# Remove first two rows from ts_data for matching with residuals
+ts_data_adjusted <- ts_data[-(1:2), ]
+
+
+
+# Augment the models with adjusted dataset
+# Extract corresponding dates
+adjusted_dates <- dta$Date[-(1:2)]
+
+# For M1
+ts_data_M1 <- augment(M1, data = ts_data_adjusted, na.action = na.pass) |>
+  mutate(index = 1:n(),
+         Date = adjusted_dates)
+
+# For M2
+ts_data_M2 <- augment(M2, data = ts_data_adjusted, na.action = na.pass) |>
+  mutate(index = 1:n(),
+         Date = adjusted_dates)
+
+# For M3
+ts_data_M3 <- augment(M3, data = ts_data_adjusted, na.action = na.pass) |>
+  mutate(index = 1:n(),
+         Date = adjusted_dates)
+
+# For M4
+ts_data_M4 <- augment(M4, data = ts_data_adjusted, na.action = na.pass) |>
+  mutate(index = 1:n(),
+         Date = adjusted_dates)
+
+
+# Add standardized residuals categories (SRE) to the datasets
+
+#For M1
+
+ts_data_M1 <- ts_data_M1 |> 
+  dplyr::mutate(SRE1.96 = dplyr::case_when(
+    .std.resid > 1.96 | .std.resid < -1.96  ~ 1,
+    .std.resid > -1.96 & .std.resid < 1.96 ~ 0
+  ),
+  SRE2.58 = dplyr::case_when(
+    .std.resid > 2.58 | .std.resid < -2.58  ~ 1,
+    .std.resid > -2.58 & .std.resid < 2.58 ~ 0
+  ),
+  SRE3.29 = dplyr::case_when(
+    .std.resid > 3.29 | .std.resid < -3.29  ~ 1,
+    .std.resid > -3.29 & .std.resid < 3.29 ~ 0
+  ))
+
+# For M2
+ts_data_M2 <- ts_data_M2 |>
+  mutate(SRE1.96 = case_when(
+    .std.resid > 1.96 | .std.resid < -1.96  ~ 1,
+    .std.resid > -1.96 & .std.resid < 1.96 ~ 0
+  ),
+  SRE2.58 = case_when(
+    .std.resid > 2.58 | .std.resid < -2.58  ~ 1,
+    .std.resid > -2.58 & .std.resid < 2.58 ~ 0
+  ),
+  SRE3.29 = case_when(
+    .std.resid > 3.29 | .std.resid < -3.29  ~ 1,
+    .std.resid > -3.29 & .std.resid < 3.29 ~ 0
+  ))
+
+# For M3
+ts_data_M3 <- ts_data_M3 |>
+  mutate(SRE1.96 = case_when(
+    .std.resid > 1.96 | .std.resid < -1.96  ~ 1,
+    .std.resid > -1.96 & .std.resid < 1.96 ~ 0
+  ),
+  SRE2.58 = case_when(
+    .std.resid > 2.58 | .std.resid < -2.58  ~ 1,
+    .std.resid > -2.58 & .std.resid < 2.58 ~ 0
+  ),
+  SRE3.29 = case_when(
+    .std.resid > 3.29 | .std.resid < -3.29  ~ 1,
+    .std.resid > -3.29 & .std.resid < 3.29 ~ 0
+  ))
+
+# For M4
+ts_data_M4 <- ts_data_M4 |>
+  mutate(SRE1.96 = case_when(
+    .std.resid > 1.96 | .std.resid < -1.96  ~ 1,
+    .std.resid > -1.96 & .std.resid < 1.96 ~ 0
+  ),
+  SRE2.58 = case_when(
+    .std.resid > 2.58 | .std.resid < -2.58  ~ 1,
+    .std.resid > -2.58 & .std.resid < 2.58 ~ 0
+  ),
+  SRE3.29 = case_when(
+    .std.resid > 3.29 | .std.resid < -3.29  ~ 1,
+    .std.resid > -3.29 & .std.resid < 3.29 ~ 0
+  ))
+
+# Check frequency distribution for SRE1.96, SRE2.58, and SRE3.29 for M1, M2, M3, and M4
+
+expss::fre(ts_data_M1$SRE1.96)
+expss::fre(ts_data_M1$SRE2.58)
+expss::fre(ts_data_M1$SRE3.29)
+
+expss::fre(ts_data_M2$SRE1.96)
+expss::fre(ts_data_M2$SRE2.58)
+expss::fre(ts_data_M2$SRE3.29)
+
+expss::fre(ts_data_M3$SRE1.96)
+expss::fre(ts_data_M3$SRE2.58)
+expss::fre(ts_data_M3$SRE3.29)
+
+expss::fre(ts_data_M4$SRE1.96)
+expss::fre(ts_data_M4$SRE2.58)
+expss::fre(ts_data_M4$SRE3.29)
+
+# Plotting the standardized residuals for each model
+
+#M1 Plot
+
+ggplot(ts_data_M1, aes(x = Date, y = .std.resid)) + 
+  geom_point(aes(color = factor(SRE1.96))) + 
+  scale_color_manual(values = c("1" = "red", "0" = "blue"), 
+                     labels = c("1" = "SRE > 1.96", "0" = "SRE < 1.96")) + 
+  labs(
+    x = "Date of Observation", 
+    y = "Standardized Residuals", 
+    title = "Standardised Residuals M1", 
+    color = "FRP Support"
+  ) + 
+  theme_light() + 
+  scale_x_date(
+    breaks = seq(from = min(ts_data_M1$Date), 
+                 to = max(ts_data_M1$Date), 
+                 by = "1 year"),  # Breaks every year
+    labels = scales::date_format("%Y")  # Labels in Year format
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate labels for legibility
+
+# M2 Plot
+ggplot(ts_data_M2, aes(x = Date, y = .std.resid)) + 
+  geom_point(aes(color = factor(SRE1.96))) + 
+  scale_color_manual(values = c("1" = "red", "0" = "blue"), 
+                     labels = c("1" = "SRE > 1.96", "0" = "SRE < 1.96")) + 
+  labs(
+    x = "Date of Observation", 
+    y = "Standardized Residuals", 
+    title = "Standardised Residuals M2", 
+    color = "FRP Support"
+  ) + 
+  theme_light() + 
+  scale_x_date(
+    breaks = seq(from = min(ts_data_M2$Date), 
+                 to = max(ts_data_M2$Date), 
+                 by = "1 year"),  # Breaks every year
+    labels = scales::date_format("%Y")  # Labels in Year format
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate labels for legibility
+
+# M3 Plot
+ggplot(ts_data_M3, aes(x = Date, y = .std.resid)) + 
+  geom_point(aes(color = factor(SRE1.96))) + 
+  scale_color_manual(values = c("1" = "red", "0" = "blue"), 
+                     labels = c("1" = "SRE > 1.96", "0" = "SRE < 1.96")) + 
+  labs(
+    x = "Date of Observation", 
+    y = "Standardized Residuals", 
+    title = "Standardised Residuals M3", 
+    color = "FRP Support"
+  ) + 
+  theme_light() + 
+  scale_x_date(
+    breaks = seq(from = min(ts_data_M3$Date), 
+                 to = max(ts_data_M3$Date), 
+                 by = "1 year"),  # Breaks every year
+    labels = scales::date_format("%Y")  # Labels in Year format
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate labels for legibility
+
+# M4 Plot
+ggplot(ts_data_M4, aes(x = Date, y = .std.resid)) + 
+  geom_point(aes(color = factor(SRE1.96))) + 
+  scale_color_manual(values = c("1" = "red", "0" = "blue"), 
+                     labels = c("1" = "SRE > 1.96", "0" = "SRE < 1.96")) + 
+  labs(
+    x = "Date of Observation", 
+    y = "Standardized Residuals", 
+    title = "Standardised Residuals M4", 
+    color = "FRP Support"
+  ) + 
+  theme_light() + 
+  scale_x_date(
+    breaks = seq(from = min(ts_data_M4$Date), 
+                 to = max(ts_data_M4$Date), 
+                 by = "1 year"),  # Breaks every year
+    labels = scales::date_format("%Y")  # Labels in Year format
+  ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate labels for legibility
+
+#Cooks D Plots
+
+# Cook's D Plot for M1
+autoplot(M1, which = 4) + 
+  theme_light() + 
+  ggtitle("Cook's D Plot for M1 (No Interactions)")
+
+# Cook's D Plot for M2
+autoplot(M2, which = 4) + 
+  theme_light() + 
+  ggtitle("Cook's D Plot for M2 (Asylum X Accountability)")
+
+# Cook's D Plot for M3
+autoplot(M3, which = 4) + 
+  theme_light() + 
+  ggtitle("Cook's D Plot for M3 (Stock Rate X Accountability)")
+
+# Cook's D Plot for M4
+autoplot(M4, which = 4) + 
+  theme_light() + 
+  ggtitle("Cook's D Plot for M4 (Unemployment X Accountability)")
+```
+
+##### Linearity
+
+```{r}
+
+# Ramsey's RESET test for M1
+resettest(M1, power = 2:3, type = "fitted")
+
+# Ramsey's RESET test for M2
+resettest(M2, power = 2:3, type = "fitted")
+
+# Ramsey's RESET test for M3
+resettest(M3, power = 2:3, type = "fitted")
+
+# Ramsey's RESET test for M4
+resettest(M4, power = 2:3, type = "fitted")
+
+```
+
+##### Structural Breaks
+
+```{r}
+
+# Fstats and sctest for M1
+fsm1 <- Fstats(M1, data = ts_data)
+plot(fsm1)
+sctest(fsm1, type = "supF", data = ts_data)
+breakpoints(fsm1)
+
+# Fstats and sctest for M2
+fsm2 <- Fstats(M2, data = ts_data)
+plot(fsm2)
+sctest(fsm2, type = "supF", data = ts_data)
+breakpoints(fsm2)
+
+# Fstats and sctest for M3
+fsm3 <- Fstats(M3, data = ts_data)
+plot(fsm3)
+sctest(fsm3, type = "supF", data = ts_data)
+breakpoints(fsm3)
+
+# Fstats and sctest for M4
+fsm4 <- Fstats(M4, data = ts_data)
+plot(fsm4)
+sctest(fsm4, type = "supF", data = ts_data)
+breakpoints(fsm4)
+
+
+
+```
+
+### Piecewise Models
+
+```{r}
+#estimating piecewise model 1
+
+# Split the data at observation 126
+ts_data_pre_m1 <- window(ts_data, end = time(ts_data)[174])
+ts_data_post_m1 <- window(ts_data, start = time(ts_data)[174])
+
+# Estimate the same model for both segments
+M1_pre <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + asylum_crisis_93 ,
+               data = ts_data_pre_m1)
+
+M1_post <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + utoya + asylum_crisis_15,
+               data = ts_data_post_m1)
+
+# View summaries
+summary(M1_pre)
+summary(M1_post)
+
+#Model comparisons
+stargazer(M1, M1_pre, M1_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models",
+          column.labels = c("Full Sample", "Pre-Break (≤174)", "Post-Break (174+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          no.space = TRUE,
+          digits = 3)
+```
+
+```{r}
+
+#estimating piecewise model 2
+
+# Split the data at observation 126
+ts_data_pre_m2 <- window(ts_data, end = time(ts_data)[126])
+ts_data_post_m2 <- window(ts_data, start = time(ts_data)[127])
+
+# Estimate the same model for both segments
+M2_pre <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + asylum_crisis_93,
+               data = ts_data_pre_m2)
+
+M2_post <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum + utoya + asylum_crisis_15 +
+                  frp_gov_growing_acc + 
+                  frp_gov_growing_acc:asl_stand + 
+                  frp_gov_growing_acc:L(asl_stand, 1) + 
+                  frp_gov_growing_acc:L(asl_stand, 2),
+                data = ts_data_post_m2)
+
+# View summaries
+summary(M2_pre)
+summary(M2_post)
+
+#Model comparisons
+stargazer(M2, M2_pre, M2_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models",
+          column.labels = c("Full Sample", "Pre-Break (≤126)", "Post-Break (127+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          no.space = TRUE,
+          digits = 3)
+```
+
+```{r}
+#estimating piecewise model 3
+
+# Split the data at observation 131
+ts_data_pre_m3_4 <- window(ts_data, end = time(ts_data)[131])
+ts_data_post_m3_4 <- window(ts_data, start = time(ts_data)[131])
+
+# Estimate the same model for both segments
+M3_pre <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + asylum_crisis_93,
+               data = ts_data_pre_m3_4)
+
+M3_post <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum + utoya + asylum_crisis_15 +
+                  frp_gov_growing_acc + 
+                 frp_gov_growing_acc:stock_rate_stand + 
+               frp_gov_growing_acc:L(stock_rate_stand, 1) + 
+               frp_gov_growing_acc:L(stock_rate_stand, 2),
+                data = ts_data_post_m3_4)
+
+# View summaries
+summary(M3_pre)
+summary(M3_post)
+
+#Model comparisons
+stargazer(M3, M3_pre, M3_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models",
+          column.labels = c("Full Sample", "Pre-Break (≤131)", "Post-Break (132+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          no.space = TRUE,
+          digits = 3)
+```
+
+```{r}
+
+#estimating piecewise model 4
+
+# Estimate the same model for both segments
+M4_pre <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + asylum_crisis_93,
+               data = ts_data_pre_m3_4)
+
+M4_post <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum + utoya + asylum_crisis_15 + 
+                  frp_gov_growing_acc + 
+                 frp_gov_growing_acc:unemp_stand + 
+               frp_gov_growing_acc:L(unemp_stand, 1) + 
+               frp_gov_growing_acc:L(unemp_stand, 2),
+                data = ts_data_post_m3_4)
+
+# View summaries
+summary(M4_pre)
+summary(M4_post)
+
+#Model comparisons
+stargazer(M4, M4_pre, M4_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models",
+          column.labels = c("Full Sample", "Pre-Break (≤131)", "Post-Break (132+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          no.space = TRUE,
+          digits = 3)
+```
+
+##### Autocorrelation
+
+```{r}
+
+# Ljung-Box and Breusch-Godfrey Tests for M1_pre
+ljung_box_M1_pre <- Box.test(residuals(M1_pre), lag = 12, type = "Ljung-Box")
+bg_test_M1_pre <- bgtest(M1_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M1_post
+ljung_box_M1_post <- Box.test(residuals(M1_post), lag = 12, type = "Ljung-Box")
+bg_test_M1_post <- bgtest(M1_post, order = 12)
+
+
+# Ljung-Box and Breusch-Godfrey Tests for M2_pre
+ljung_box_M2_pre <- Box.test(residuals(M2_pre), lag = 12, type = "Ljung-Box")
+bg_test_M2_pre <- bgtest(M2_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M2_post
+ljung_box_M2_post <- Box.test(residuals(M2_post), lag = 12, type = "Ljung-Box")
+bg_test_M2_post <- bgtest(M2_post, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M3_pre
+ljung_box_M3_pre <- Box.test(residuals(M3_pre), lag = 12, type = "Ljung-Box")
+bg_test_M3_pre <- bgtest(M3_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M3_post
+ljung_box_M3_post <- Box.test(residuals(M3_post), lag = 12, type = "Ljung-Box")
+bg_test_M3_post <- bgtest(M3_post, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M4_pre
+ljung_box_M4_pre <- Box.test(residuals(M4_pre), lag = 12, type = "Ljung-Box")
+bg_test_M4_pre <- bgtest(M4_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M4_post
+ljung_box_M4_post <- Box.test(residuals(M4_post), lag = 12, type = "Ljung-Box")
+bg_test_M4_post <- bgtest(M4_post, order = 12)
+
+# Compile results into a data frame
+results_piecewise_df <- data.frame(
+  Model = c("M1_pre", "M1_post", "M2_pre", "M2_post", "M3_pre", "M3_post", "M4_pre", "M4_post"),
+  Ljung_Box_p_value = c(ljung_box_M1_pre$p.value, ljung_box_M1_post$p.value, ljung_box_M2_pre$p.value, ljung_box_M2_post$p.value,
+                        ljung_box_M3_pre$p.value, ljung_box_M3_post$p.value, ljung_box_M4_pre$p.value, ljung_box_M4_post$p.value),
+  BG_p_value = c(bg_test_M1_pre$p.value, bg_test_M1_post$p.value, bg_test_M2_pre$p.value, bg_test_M2_post$p.value,
+                 bg_test_M3_pre$p.value, bg_test_M3_post$p.value, bg_test_M4_pre$p.value, bg_test_M4_post$p.value)
+)
+
+# Print the table
+print(results_piecewise_df)
+
+
+
+```
+
+##### Heteroskedasticity
+
+```{r}
+# Applying White's test for heteroscedasticity to split subsample models
+white_M1_pre <- white(M1_pre)
+white_M1_post <- white(M1_post)
+white_M2_pre <- white(M2_pre)
+white_M2_post <- white(M2_post)
+white_M3_pre <- white(M3_pre)
+white_M3_post <- white(M3_post)
+white_M4_pre <- white(M4_pre)
+white_M4_post <- white(M4_post)
+
+# Extracting the test statistics and p-values from the results
+white_results_split <- data.frame(
+  Model = c("M1_pre", "M1_post", "M2_pre", "M2_post", "M3_pre", "M3_post", "M4_pre", "M4_post"),
+  White_Statistic = c(white_M1_pre$statistic, white_M1_post$statistic, white_M2_pre$statistic, white_M2_post$statistic,
+                      white_M3_pre$statistic, white_M3_post$statistic, white_M4_pre$statistic, white_M4_post$statistic),
+  White_p_value = c(white_M1_pre$p.value, white_M1_post$p.value, white_M2_pre$p.value, white_M2_post$p.value,
+                    white_M3_pre$p.value, white_M3_post$p.value, white_M4_pre$p.value, white_M4_post$p.value)
+)
+
+# Display results
+print(white_results_split)
+
+
+
+```
+
+##### Weak Exogeneity
+
+```{r}
+#These tests show which variables are sueful for prediciting the DV!!!!!!!!!
+# Pre M1
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_pre_m1)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_pre_m1)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_pre_m1)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_pre_m1)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_pre_m1)
+grangertest(frp_avg_support ~ asylum_crisis_93, order = 2, data = ts_data_pre_m1)
+
+# Post M1
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ asylum_crisis_15, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ utoya, order = 2, data = ts_data_post_m1)
+grangertest(frp_avg_support ~ frp_gov_growing_acc, order = 2, data = ts_data_post_m1)
+
+# Pre M2
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_pre_m2)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_pre_m2)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_pre_m2)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_pre_m2)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_pre_m2)
+grangertest(frp_avg_support ~ asylum_crisis_93, order = 2, data = ts_data_pre_m2)
+
+# Post M2
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ asylum_crisis_15, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ utoya, order = 2, data = ts_data_post_m2)
+grangertest(frp_avg_support ~ frp_gov_growing_acc, order = 2, data = ts_data_post_m2)
+
+# Pre M3
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ asylum_crisis_93, order = 2, data = ts_data_pre_m3_4)
+
+# Post M3
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ asylum_crisis_15, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ utoya, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ frp_gov_growing_acc, order = 2, data = ts_data_post_m3_4)
+
+# Pre M4
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_pre_m3_4)
+grangertest(frp_avg_support ~ asylum_crisis_93, order = 2, data = ts_data_pre_m3_4)
+
+# Post M4
+grangertest(frp_avg_support ~ asl_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ stock_rate_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ unemp_stand, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ parliamentary_elec, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ EU_referendum, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ asylum_crisis_15, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ utoya, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_avg_support ~ frp_gov_growing_acc, order = 2, data = ts_data_post_m3_4)
+
+
+```
+
+Properly Done Causality Test
+
+```{r}
+# Pre M1
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+grangertest(asylum_crisis_93 ~ frp_avg_support, order = 2, data = ts_data_pre_m1)
+
+# Post M1
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(asylum_crisis_15 ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(utoya ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+grangertest(frp_gov_growing_acc ~ frp_avg_support, order = 2, data = ts_data_post_m1)
+
+# Pre M2
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+grangertest(asylum_crisis_93 ~ frp_avg_support, order = 2, data = ts_data_pre_m2)
+
+# Post M2
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(asylum_crisis_15 ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(utoya ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+grangertest(frp_gov_growing_acc ~ frp_avg_support, order = 2, data = ts_data_post_m2)
+
+# Pre M3
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(asylum_crisis_93 ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+
+# Post M3
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(asylum_crisis_15 ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(utoya ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_gov_growing_acc ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+
+# Pre M4
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+grangertest(asylum_crisis_93 ~ frp_avg_support, order = 2, data = ts_data_pre_m3_4)
+
+# Post M4
+grangertest(asl_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(stock_rate_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(unemp_stand ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(parliamentary_elec ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(EU_referendum ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(asylum_crisis_15 ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(utoya ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+grangertest(frp_gov_growing_acc ~ frp_avg_support, order = 2, data = ts_data_post_m3_4)
+
+```
+
+##### Normality
+
+```{r}
+#Testing for Normality on Subsample Models
+
+# Perform the Jarque-Bera test for normality on the residuals of each model
+jb_results <- data.frame(
+  Model = c("M1_pre", "M1_post", "M2_pre", "M2_post", "M3_pre", "M3_post", "M4_pre", "M4_post"),
+  JB_Statistic = c(
+    jarque.bera.test(residuals(M1_pre))$statistic, 
+    jarque.bera.test(residuals(M1_post))$statistic, 
+    jarque.bera.test(residuals(M2_pre))$statistic, 
+    jarque.bera.test(residuals(M2_post))$statistic, 
+    jarque.bera.test(residuals(M3_pre))$statistic, 
+    jarque.bera.test(residuals(M3_post))$statistic, 
+    jarque.bera.test(residuals(M4_pre))$statistic, 
+    jarque.bera.test(residuals(M4_post))$statistic
+  ),
+  p_value = c(
+    jarque.bera.test(residuals(M1_pre))$p.value, 
+    jarque.bera.test(residuals(M1_post))$p.value, 
+    jarque.bera.test(residuals(M2_pre))$p.value, 
+    jarque.bera.test(residuals(M2_post))$p.value, 
+    jarque.bera.test(residuals(M3_pre))$p.value, 
+    jarque.bera.test(residuals(M3_post))$p.value, 
+    jarque.bera.test(residuals(M4_pre))$p.value, 
+    jarque.bera.test(residuals(M4_post))$p.value
+  )
+)
+
+# Display the results
+print(jb_results)
+
+# Plot histograms and Q-Q plots for the residuals of M1 to M4 (both pre and post)
+plot_residuals <- function(model, model_name) {
+  residuals_data <- residuals(model)
+  
+  # Set up a 1x2 grid of plots (Histogram and Q-Q Plot)
+  par(mfrow = c(1, 2))
+  
+  # Histogram of residuals
+  hist(residuals_data, main = paste("Histogram of Residuals -", model_name),
+       xlab = "Residuals", col = "lightblue", border = "black", breaks = 20)
+  
+  # Q-Q plot of residuals
+  qqnorm(residuals_data, main = paste("Q-Q Plot -", model_name))
+  qqline(residuals_data, col = "red")
+}
+
+# Apply the function to each model (M1_pre, M1_post, M2_pre, M2_post, M3_pre, M3_post, M4_pre, M4_post)
+plot_residuals(M1_pre, "M1_pre")
+plot_residuals(M1_post, "M1_post")
+plot_residuals(M2_pre, "M2_pre")
+plot_residuals(M2_post, "M2_post")
+plot_residuals(M3_pre, "M3_pre")
+plot_residuals(M3_post, "M3_post")
+plot_residuals(M4_pre, "M4_pre")
+plot_residuals(M4_post, "M4_post")
+
+# Reset the plotting layout to a single panel for other plots
+par(mfrow = c(1, 1))
+
+```
+
+Residuals and Influential Outliers
+
+```{r}
+# Do later, its a pain in the ass
+```
+
+##### Linearity
+
+```{r}
+# Ramsey's RESET test for all subsample models
+
+# For M1 Pre
+resettest(M1_pre, power = 2:3, type = "fitted")
+
+# For M1 Post
+resettest(M1_post, power = 2:3, type = "fitted")
+
+# For M2 Pre
+resettest(M2_pre, power = 2:3, type = "fitted")
+
+# For M2 Post
+resettest(M2_post, power = 2:3, type = "fitted")
+
+# For M3 Pre
+resettest(M3_pre, power = 2:3, type = "fitted")
+
+# For M3 Post
+resettest(M3_post, power = 2:3, type = "fitted")
+
+# For M4 Pre
+resettest(M4_pre, power = 2:3, type = "fitted")
+
+# For M4 Post
+resettest(M4_post, power = 2:3, type = "fitted")
+
+#Pass
+
+```
+
+##### Structural Breaks
+
+(IGNORE?)
+
+```{r}
+# Fstats and sctest for M1 Pre
+fsm1_pre <- Fstats(M1_pre, data = ts_data_pre_m1)
+plot(fsm1_pre)
+sctest(fsm1_pre, type = "supF", data = ts_data_pre_m1)
+breakpoints(fsm1_pre)
+
+# Fstats and sctest for M1 Post
+fsm1_post <- Fstats(M1_post, data = ts_data_post_m1)
+plot(fsm1_post)
+sctest(fsm1_post, type = "supF", data = ts_data_post_m1)
+breakpoints(fsm1_post)
+
+# Fstats and sctest for M2 Pre
+fsm2_pre <- Fstats(M2_pre, data = ts_data_pre_m2)
+plot(fsm2_pre)
+sctest(fsm2_pre, type = "supF", data = ts_data_pre_m2)
+breakpoints(fsm2_pre)
+
+# Fstats and sctest for M2 Post
+fsm2_post <- Fstats(M2_post, data = ts_data_post_m2)
+plot(fsm2_post)
+sctest(fsm2_post, type = "supF", data = ts_data_post_m2)
+breakpoints(fsm2_post)
+
+# Fstats and sctest for M3 Pre
+fsm3_pre <- Fstats(M3_pre, data = ts_data_pre_m3_4)
+plot(fsm3_pre)
+sctest(fsm3_pre, type = "supF", data = ts_data_pre_m3_4)
+breakpoints(fsm3_pre)
+
+# Fstats and sctest for M3 Post
+fsm3_post <- Fstats(M3_post, data = ts_data_post_m3_4)
+plot(fsm3_post)
+sctest(fsm3_post, type = "supF", data = ts_data_post_m3_4)
+breakpoints(fsm3_post)
+
+# Fstats and sctest for M4 Pre
+fsm4_pre <- Fstats(M4_pre, data = ts_data_pre_m3_4)
+plot(fsm4_pre)
+sctest(fsm4_pre, type = "supF", data = ts_data_pre_m3_4)
+breakpoints(fsm4_pre)
+
+# Fstats and sctest for M4 Post
+fsm4_post <- Fstats(M4_post, data = ts_data_post_m3_4)
+plot(fsm4_post)
+sctest(fsm4_post, type = "supF", data = ts_data_post_m3_4)
+breakpoints(fsm4_post)
+
+```
+
+##### Robust SE (HAC)
+
+```{r}
+#M1
+
+# Calculate HAC robust standard errors for both models
+hac_se_pre_m1 <- vcovHAC(M1_pre)
+hac_se_post_m1 <- vcovHAC(M1_post)
+
+# Extract standard errors from the HAC covariance matrix
+hac_se_pre_m1_vals <- sqrt(diag(hac_se_pre_m1))
+hac_se_post_m1_vals <- sqrt(diag(hac_se_post_m1))
+
+# Display models with HAC standard errors using stargazer
+stargazer(M1, M1_pre, M1_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre-Break (≤174)", "Post-Break (174+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, hac_se_pre_m1_vals, hac_se_post_m1_vals),  # No HAC for M1, HAC for M1_pre and M1_post
+          no.space = TRUE,
+          digits = 3)
+```
+
+```{r}
+#M2
+
+# Calculate HAC robust standard errors for both M2_pre and M2_post
+hac_se_pre_m2 <- vcovHAC(M2_pre)
+hac_se_post_m2 <- vcovHAC(M2_post)
+
+# Extract HAC standard errors from the covariance matrix
+hac_se_pre_m2_vals <- sqrt(diag(hac_se_pre_m2))
+hac_se_post_m2_vals <- sqrt(diag(hac_se_post_m2))
+
+covarlabelsm2 <- c("Support for FRP t−1", 
+                     "Support for FRP t−2",
+                     "Number of asylum seekers t",
+                     "Number of asylum seekers t−1",
+                     "Number of asylum seekers t−2",
+                     "OBX price index t",
+                     "OBX price index t−1",
+                     "OBX price index t−2",
+                     "Unemployment level t",
+                     "Unemployment level t−1",
+                     "Unemployment level t−2",
+                     "Parliamentary election month",
+                     "The EU referendum in 1994",
+                     "The terror attack in 2011",
+                     "The 2015 asylum crisis",
+                     "The 1993 asylum crisis",
+                     "FRP in government (2013-)",
+                     "Asylum t*government",
+                     "Asylum t−1*government",
+                     "Asylum t−2*government",
+                     "Constant")
+
+
+# Display models with HAC standard errors using stargazer
+stargazer( M2, M2_pre, M2_post,
+          type = "html",
+          title = "Comparison of Full Sample and Piecewise Model 2 with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre June 2001 (N≤126)", "Post June 2001 (N=127+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, hac_se_pre_m2_vals, hac_se_post_m2_vals),
+          no.space = TRUE,
+          digits = 3,
+          covariate.labels = c(covarlabelsm2),
+ star.cutoffs = c(0.05, 0.01, 0.001),
+notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje")
+
+
+
+
+
+```
+
+```{r}
+#M3
+
+# Calculate HAC robust standard errors only for M3_post
+hac_se_post_m3 <- vcovHAC(M3_post)
+
+# Extract HAC standard errors from the covariance matrix
+hac_se_post_m3_vals <- sqrt(diag(hac_se_post_m3))
+
+# Display models with HAC standard errors for M3_post and regular standard errors for the others using stargazer
+stargazer(M3, M3_pre, M3_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models with HAC Standard Errors for M3_post",
+          column.labels = c( "Full Sample (M3)", "Pre-Break (M3)", "Post-Break (M3)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list( NULL, NULL, hac_se_post_m3_vals),  
+          no.space = TRUE,
+          digits = 3)
+```
+
+### **Even more Piecwiseness with more Breakpoints**
+
+##### Additional Models
+
+M1
+
+```{r}
+
+#splitting m1pre
+
+# Split the data at observation 126
+ts_data_pre2_m1 <- window(ts_data, end = time(ts_data)[131])
+ts_data_mid_m1 <- window(ts_data, start = time(ts_data)[131], end = time(ts_data)[173])
+
+M1_pre2 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                 EU_referendum + asylum_crisis_93 ,
+               data = ts_data_pre2_m1)
+
+M1_mid <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                 L(asl_stand, 1) + L(asl_stand, 2) +
+                 stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                 unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) +
+                 EU_referendum,
+               data = ts_data_mid_m1)
+
+stargazer(M1, M1_pre2, M1_mid, M1_post,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre-Break (≤131)", "(132-173)", "Post-Break (174+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, NULL, NULL, hac_se_post_m1_vals),  # No HAC for M1, HAC for M1_pre and M1_post
+          no.space = TRUE,
+          digits = 3)
+```
+
+M3
+
+```{r}
+
+#splitting m3post
+
+# Split the data at observation 126
+ts_data_mid_m3_4 <- window(ts_data, start = time(ts_data)[131], end = time(ts_data)[178])
+ts_data_post2_m3_4 <- window(ts_data, start = time(ts_data)[179])
+
+M3_mid <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum,
+                data = ts_data_mid_m3_4)
+
+M3_post2 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum + utoya + asylum_crisis_15 +
+                  frp_gov_growing_acc + 
+                 frp_gov_growing_acc:stock_rate_stand + 
+               frp_gov_growing_acc:L(stock_rate_stand, 1) + 
+               frp_gov_growing_acc:L(stock_rate_stand, 2),
+                data = ts_data_post2_m3_4)
+
+stargazer(M3, M3_pre, M3_mid, M3_post2,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre-Break (≤131)", "(132-178)", "Post-Break (179+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, NULL, NULL, NULL),
+          no.space = TRUE,
+          digits = 3)
+
+```
+
+M4
+
+```{r}
+#splitting m4post
+
+
+M4_mid <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum,
+                data = ts_data_mid_m3_4)
+
+M4_post2 <- dynlm(frp_avg_support ~ L(frp_avg_support, 1) + L(frp_avg_support, 2) + asl_stand +
+                  L(asl_stand, 1) + L(asl_stand, 2) +
+                  stock_rate_stand + L(stock_rate_stand, 1) + L(stock_rate_stand, 2) +
+                  unemp_stand + L(unemp_stand, 1) + L(unemp_stand, 2) + parliamentary_elec +
+                  EU_referendum + utoya + asylum_crisis_15 +
+                  frp_gov_growing_acc + 
+               frp_gov_growing_acc:unemp_stand + 
+               frp_gov_growing_acc:L(unemp_stand, 1) + 
+               frp_gov_growing_acc:L(unemp_stand, 2),
+                data = ts_data_post2_m3_4)
+
+stargazer(M4, M4_pre, M4_mid, M4_post2,
+          type = "text",
+          title = "Comparison of Full Sample and Piecewise Models with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre-Break (≤131)", "(132-178)", "Post-Break (179+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, NULL, NULL, NULL),
+          no.space = TRUE,
+          digits = 3)
+```
+
+##### Autocorrelation
+
+```{r}
+# Ljung-Box and Breusch-Godfrey Tests for M1_pre
+ljung_box_M1_pre2 <- Box.test(residuals(M1_pre2), lag = 12, type = "Ljung-Box")
+bg_test_M1_pre2 <- bgtest(M1_pre2, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M1_post
+ljung_box_M1_mid <- Box.test(residuals(M1_mid), lag = 12, type = "Ljung-Box")
+bg_test_M1_mid <- bgtest(M1_mid, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M1_post
+ljung_box_M1_post <- Box.test(residuals(M1_post), lag = 12, type = "Ljung-Box")
+bg_test_M1_post <- bgtest(M1_post, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M2_pre
+ljung_box_M2_pre <- Box.test(residuals(M2_pre), lag = 12, type = "Ljung-Box")
+bg_test_M2_pre <- bgtest(M2_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M2_post
+ljung_box_M2_post <- Box.test(residuals(M2_post), lag = 12, type = "Ljung-Box")
+bg_test_M2_post <- bgtest(M2_post, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M3_pre
+ljung_box_M3_pre <- Box.test(residuals(M3_pre), lag = 12, type = "Ljung-Box")
+bg_test_M3_pre <- bgtest(M3_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M3_pre
+ljung_box_M3_mid <- Box.test(residuals(M3_mid), lag = 12, type = "Ljung-Box")
+bg_test_M3_mid <- bgtest(M3_mid, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M3_post
+ljung_box_M3_post2 <- Box.test(residuals(M3_post2), lag = 12, type = "Ljung-Box")
+bg_test_M3_post2 <- bgtest(M3_post2, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M4_pre
+ljung_box_M4_pre <- Box.test(residuals(M4_pre), lag = 12, type = "Ljung-Box")
+bg_test_M4_pre <- bgtest(M4_pre, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M4_post
+ljung_box_M4_mid <- Box.test(residuals(M4_mid), lag = 12, type = "Ljung-Box")
+bg_test_M4_mid <- bgtest(M4_mid, order = 12)
+
+# Ljung-Box and Breusch-Godfrey Tests for M4_post
+ljung_box_M4_post2 <- Box.test(residuals(M4_post2), lag = 12, type = "Ljung-Box")
+bg_test_M4_post2 <- bgtest(M4_post2, order = 12)
+
+# Compile results into a data frame
+results_piecewise_df_2 <- data.frame(
+  Model = c("M1_pre2","M1_mid", "M1_post", "M2_pre", "M2_post", "M3_pre","M3_mid", "M3_post2", "M4_pre","M4_mid", "M4_post2"),
+  Ljung_Box_p_value = c(ljung_box_M1_pre2$p.value, ljung_box_M1_mid$p.value, ljung_box_M1_post$p.value, ljung_box_M2_pre$p.value, ljung_box_M2_post$p.value,
+                        ljung_box_M3_pre$p.value, ljung_box_M3_mid$p.value, ljung_box_M3_post2$p.value, ljung_box_M4_pre$p.value, ljung_box_M4_mid$p.value, ljung_box_M4_post2$p.value),
+  BG_p_value = c(bg_test_M1_pre2$p.value, bg_test_M1_mid$p.value, bg_test_M1_post$p.value, bg_test_M2_pre$p.value, bg_test_M2_post$p.value,
+                 bg_test_M3_pre$p.value, bg_test_M3_mid$p.value, bg_test_M3_post2$p.value, bg_test_M4_pre$p.value, bg_test_M4_mid$p.value, bg_test_M4_post2$p.value)
+)
+
+# Print the table
+print(results_piecewise_df_2)
+
+```
+
+##### Heteroskedasticity
+
+```{r}
+
+# Applying White's test for heteroscedasticity to each model
+white_M1_pre2   <- white(M1_pre2)
+white_M1_mid    <- white(M1_mid)
+white_M1_post   <- white(M1_post)
+white_M2_pre    <- white(M2_pre)
+white_M2_post   <- white(M2_post)
+white_M3_pre    <- white(M3_pre)
+white_M3_mid    <- white(M3_mid)
+white_M3_post2  <- white(M3_post2)
+white_M4_pre    <- white(M4_pre)
+white_M4_mid    <- white(M4_mid)
+white_M4_post2  <- white(M4_post2)
+
+# Extracting test statistics and p-values into a dataframe
+white_results_split <- data.frame(
+  Model = c("M1_pre2", "M1_mid", "M1_post", 
+            "M2_pre", "M2_post", 
+            "M3_pre", "M3_mid", "M3_post2", 
+            "M4_pre", "M4_mid", "M4_post2"),
+  White_Statistic = c(white_M1_pre2$statistic, white_M1_mid$statistic, white_M1_post$statistic,
+                      white_M2_pre$statistic, white_M2_post$statistic,
+                      white_M3_pre$statistic, white_M3_mid$statistic, white_M3_post2$statistic,
+                      white_M4_pre$statistic, white_M4_mid$statistic, white_M4_post2$statistic),
+  White_p_value = c(white_M1_pre2$p.value, white_M1_mid$p.value, white_M1_post$p.value,
+                    white_M2_pre$p.value, white_M2_post$p.value,
+                    white_M3_pre$p.value, white_M3_mid$p.value, white_M3_post2$p.value,
+                    white_M4_pre$p.value, white_M4_mid$p.value, white_M4_post2$p.value)
+)
+
+# Display results
+print(white_results_split)
+
+```
+
+##### Weak Exogeneity
+
+IGNORE FOR NOW CAUSE AINT NOBODY GOT TIME FOR THAT
+
+##### Normality
+
+```{r}
+# Define model names
+models2 <- c("M1_pre2", "M1_mid", "M1_post", 
+             "M2_pre", "M2_post", 
+             "M3_pre", "M3_mid", "M3_post2", 
+             "M4_pre", "M4_mid", "M4_post2")
+
+# Jarque-Bera test for normality on each model's residuals
+jb_results <- data.frame(
+  Model = models2,
+  JB_Statistic = sapply(models2, function(m) jarque.bera.test(residuals(get(m)))$statistic),
+  p_value = sapply(models2, function(m) jarque.bera.test(residuals(get(m)))$p.value)
+)
+
+# Display the results
+print(jb_results)
+
+# Define function to plot histogram and Q-Q plot for residuals
+plot_residuals <- function(model, model_name) {
+  residuals_data <- residuals(model)
+  
+  # Set up 1x2 plotting layout
+  par(mfrow = c(1, 2))
+  
+  # Histogram
+  hist(residuals_data, main = paste("Histogram -", model_name),
+       xlab = "Residuals", col = "lightblue", border = "black", breaks = 20)
+  
+  # Q-Q Plot
+  qqnorm(residuals_data, main = paste("Q-Q Plot -", model_name))
+  qqline(residuals_data, col = "red")
+}
+
+# Loop through all models and plot residual diagnostics
+for (m in models2) {
+  plot_residuals(get(m), m)
+}
+
+# Reset plotting layout
+par(mfrow = c(1, 1))
+
+```
+
+##### Linearity
+
+```{r}
+
+# Ramsey RESET test for all models in models2
+# Assuming 'lmtest' package is loaded and models2 is already defined
+
+reset_results <- data.frame(
+  Model = models2,
+  RESET_Statistic = sapply(models2, function(m) resettest(get(m), power = 2:3, type = "fitted")$statistic),
+  p_value = sapply(models2, function(m) resettest(get(m), power = 2:3, type = "fitted")$p.value)
+)
+
+# Display results
+print(reset_results)
+
+```
+
+##### ?Robust SE
+
+```{r}
+#Models that fail Autocorrelation or Heterskedasiticty Tests:
+
+# Calculate HAC robust standard errors for both models
+hac_se_pre2_m1 <- vcovHAC(M1_pre2)
+hac_se_pre_m3 <- vcovHAC(M3_pre)
+hac_se_post2_m3 <- vcovHAC(M3_post2)
+hac_se_pre_m4 <- vcovHAC(M4_pre)
+
+# Extract standard errors from the HAC covariance matrix
+
+hac_se_pre2_m1_vals <-  sqrt(diag(hac_se_pre2_m1))
+hac_se_pre_m3_vals <-  sqrt(diag(hac_se_pre_m3))
+hac_se_post2_m3_vals <-  sqrt(diag(hac_se_post2_m3))
+hac_se_pre_m4_vals <-  sqrt(diag(hac_se_pre_m4))
+```
+
+```{r}
+#M1
+
+covarlabelsm1 <- c("Support for FRP t−1", 
+                     "Support for FRP t−2",
+                     "Number of asylum seekers t",
+                     "Number of asylum seekers t−1",
+                     "Number of asylum seekers t−2",
+                     "OBX price index t",
+                     "OBX price index t−1",
+                     "OBX price index t−2",
+                     "Unemployment level t",
+                     "Unemployment level t−1",
+                     "Unemployment level t−2",
+                     "Parliamentary election month",
+                     "The EU referendum in 1994",
+                     "The terror attack in 2011",
+                     "The 2015 asylum crisis",
+                     "The 1993 asylum crisis",
+                     "Constant")
+
+
+stargazer(M1, M1_pre2, M1_mid, M1_post,
+          type = "html",
+           title = "Comparison of Full Sample and Piecewise Model 1 with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre November 2001 (N≤131)", "(N=132-173)", "Post June 2005 (N=174+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, hac_se_pre2_m1_vals, NULL, hac_se_post_m1_vals),  # No HAC for M1, HAC for M1_pre and M1_post
+          no.space = TRUE,
+          digits = 3,
+         covariate.labels = c(covarlabelsm1),
+ star.cutoffs = c(0.05, 0.01, 0.001),
+notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje" )
+```
+
+```{r}
+#M3
+
+covarlabelsm3 <- c("Support for FRP t−1", 
+                     "Support for FRP t−2",
+                     "Number of asylum seekers t",
+                     "Number of asylum seekers t−1",
+                     "Number of asylum seekers t−2",
+                     "OBX price index t",
+                     "OBX price index t−1",
+                     "OBX price index t−2",
+                     "Unemployment level t",
+                     "Unemployment level t−1",
+                     "Unemployment level t−2",
+                     "Parliamentary election month",
+                     "The EU referendum in 1994",
+                     "The terror attack in 2011",
+                     "The 2015 asylum crisis",
+                     "The 1993 asylum crisis",
+                     "FRP in government (2013-)",
+                     "OBX t*government",
+                     "OBX t−1*government",
+                   "OBX t−2*government",
+                     "Constant")
+
+stargazer(M3, M3_pre, M3_mid, M3_post2,
+          type = "html",
+          title = "Comparison of Full Sample and Piecewise Model 3 with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre November 2001 (N≤131)", "(N=132-178)", "Post October 2005 (N=179+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, hac_se_pre_m3_vals, NULL, hac_se_post2_m3_vals),
+          no.space = TRUE,
+          digits = 3,
+           covariate.labels = c(covarlabelsm3),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje" )
+```
+
+```{r}
+#M4
+
+covarlabelsm4 <- c("Support for FRP t−1", 
+                     "Support for FRP t−2",
+                     "Number of asylum seekers t",
+                     "Number of asylum seekers t−1",
+                     "Number of asylum seekers t−2",
+                     "OBX price index t",
+                     "OBX price index t−1",
+                     "OBX price index t−2",
+                     "Unemployment level t",
+                     "Unemployment level t−1",
+                     "Unemployment level t−2",
+                     "Parliamentary election month",
+                     "The EU referendum in 1994",
+                     "The terror attack in 2011",
+                     "The 2015 asylum crisis",
+                     "The 1993 asylum crisis",
+                     "FRP in government (2013-)",
+                     "Unemployment t*government",
+                     "Unemployment t−1*government",
+                     "Unemployment t−2*government",
+                     "Constant")
+
+
+stargazer(M4, M4_pre, M4_mid, M4_post2,
+          type = "html",
+           title = "Comparison of Full Sample and Piecewise Model 4 with HAC Standard Errors",
+          column.labels = c("Full Sample", "Pre November 2001 (N≤131)", "(N=132-178)", "Post October 2005 (N=179+)"),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = list(NULL, hac_se_pre_m4_vals, NULL, NULL),
+          no.space = TRUE,
+          digits = 3,
+           covariate.labels = c(covarlabelsm4),
+          star.cutoffs = c(0.05, 0.01, 0.001),
+notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje" )
+```
+
+### Results Presentation
+
+```{r}
+# Create the list of models and corresponding standard errors
+models2_list <- list(
+  "M1 Full Sample"   = M1,
+  "M1 Pre-Break"     = M1_pre2,
+  "M1 Mid"           = M1_mid,
+  "M1 Post-Break"    = M1_post,
+  
+  "M2 Full Sample"   = M2,
+  "M2 Pre-Break"     = M2_pre,
+  "M2 Post-Break"    = M2_post,
+  
+  "M3 Full Sample"   = M3,
+  "M3 Pre-Break"     = M3_pre,
+  "M3 Mid"           = M3_mid,
+  "M3 Post-Break"    = M3_post2,
+  
+  "M4 Full Sample"   = M4,
+  "M4 Pre-Break"     = M4_pre,
+  "M4 Mid"           = M4_mid,
+  "M4 Post-Break"    = M4_post2
+)
+
+custom_se_list <- list(
+  NULL,                     # M1 full
+  hac_se_pre2_m1_vals,       # M1_pre2 — insert your HAC SEs here
+  NULL,                     # M1_mid — update if needed
+  hac_se_post_m1_vals,      # M1_post — update if needed
+  
+  NULL,                     # M2 full
+  hac_se_pre_m2_vals,       # M2_pre — insert your HAC SEs here
+  hac_se_post_m2_vals,      # M2_post — update if needed
+  
+  NULL,                     # M3 full
+  hac_se_pre_m3_vals,       # M3_pre — insert your HAC SEs here
+  NULL,                     # M3_mid — update if needed
+  hac_se_post2_m3_vals,     # M3_post2 — update if needed
+  
+  NULL,                     # M4 full
+  hac_se_pre_m4_vals,       # M4_pre — insert your HAC SEs here
+  NULL,                     # M4_mid — update if needed
+  NULL                      # M4_post2 — update if needed
+)
+
+
+
+covarlabelsfull <- c("Support for FRP t−1", 
+                     "Support for FRP t−2",
+                     "Number of asylum seekers t",
+                     "Number of asylum seekers t−1",
+                     "Number of asylum seekers t−2",
+                     "OBX price index t",
+                     "OBX price index t−1",
+                     "OBX price index t−2",
+                     "Unemployment level t",
+                     "Unemployment level t−1",
+                     "Unemployment level t−2",
+                     "Parliamentary election month",
+                     "The EU referendum in 1994",
+                     "The terror attack in 2011",
+                     "The 2015 asylum crisis",
+                     "The 1993 asylum crisis",
+                     "FRP in government (2013-)",
+                     "Asylum t*government",
+                     "Asylum t−1*government",
+                     "Asylum t−2*government",
+                     "OBX t*government",
+                     "OBX t−1*government",
+                     "OBX t−2*government",
+                     "Unemployment t*government",
+                     "Unemployment t−1*government",
+                     "Unemployment t−2*government",
+                     "Constant")
+
+stargazer(models2_list,
+          type = "text",
+          title = "Comparison of Models with HAC Standard Errors",
+          column.labels =  names(models2_list),
+          covariate.labels = c(covarlabelsfull),
+          keep.stat = c("n", "rsq", "adj.rsq"),
+          se = custom_se_list,
+          no.space = TRUE,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          digits = 3,
+          notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+          dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje")
+
+
+covariate.labels = c(covarlabelsfull),
+ star.cutoffs = c(0.05, 0.01, 0.001),
+notes = "HAC standard errors are applied only to piecewise models when appropriate. *** = p<0.001, ** = p<0.01, * = p<0.05",
+dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes.align = "l",
+          style = "qje"
+```
+
+```{r}
+slopes(M2_post, 
+       variables = "asl_stand", 
+       newdata = datagrid(frp_gov_growing_acc = seq(from=0, to=3, by=0.2))) |> 
+  ggplot(aes(x=frp_gov_growing_acc, y=estimate)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin=conf.low, ymax=conf.high), alpha = 0.2) + 
+  labs(title = "ME Asylum Seeker M2 (post-2001) (differenced)" ,
+       y = "Marginal Effect of Monthly Asylum Seekers", 
+       x = "FRP Accountability") + 
+  scale_x_continuous(breaks=c(0,1,2,3))
+
+
+library(car)
+linearHypothesis(M2_post, c("asl_stand:frp_gov_growing_acc + 
+                  L(asl_stand, 1):frp_gov_growing_acc + 
+                  L(asl_stand, 2):frp_gov_growing_acc = 0"))
+
+
+```
